@@ -1,0 +1,8 @@
+This a minimal working SOCKS proxy.
+
+It is highly feature incomplete, not supporting UDP or any form of authentication. However it has the following benefits:
+
+ * It's written in Python (2.6)
+ * It's short
+ * It runs (works fine as a firefox proxy) 
+ * One hopes that it's easy to extend.
