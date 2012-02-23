@@ -14,7 +14,7 @@ class MyTCPServer(ThreadingTCPServer):
     allow_reuse_address = True
 CLOSE = object()
 
-logging.basicConfig(filename='/dev/stderr', level=logging.DEBUG)
+logging.basicConfig(filename='/dev/stderr', level=logging.INFO)
 
 VERSION = '\x05'
 NOAUTH = '\x00'
@@ -39,7 +39,7 @@ def recv(source, buffer):
 def forward(source, dest, name):
     while True:
         data = recv(source, 4000)
-        if data == '':
+        if data == CLOSE:
             send(dest, CLOSE)
             info('%s hung up' % name)
             return
