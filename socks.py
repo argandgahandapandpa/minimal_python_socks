@@ -101,7 +101,7 @@ class SocksHandler(StreamRequestHandler):
             error('Mangled request. Reserved field (%r) is not null' % zero)
             self.close_request()
 
-        if address_type == 'IPV4':
+        if address_type == IPV4:
             raw_dest_address = self.read(4)
             dest_address = '.'.join(map(str, unpack('>4B', raw_dest_address)))
         elif address_type == IPV6:
