@@ -14,12 +14,13 @@ class MyTCPServer(ThreadingTCPServer):
     allow_reuse_address = True
 CLOSE = object()
 
-logging.basicConfig(filename='/dev/stderr', level=logging.DEBUG)
+logging.basicConfig(filename='/dev/stderr', level=logging.INFO)
 
 VERSION = '\x05'
 NOAUTH = '\x00'
 CONNECT = '\x01'
 IPV4 = '\x01'
+IPV6 = '\x04'
 DOMAIN_NAME = '\x03'
 SUCCESS = '\x00'
 
@@ -28,7 +29,7 @@ def send(dest, msg):
         dest.close()
         return 0
     else:
-        return dest.send(msg)
+        return dest.sendall(msg)
 def recv(source, buffer):
     data = source.recv(buffer)
     if data == '':
@@ -39,7 +40,7 @@ def recv(source, buffer):
 def forward(source, dest, name):
     while True:
         data = recv(source, 4000)
-        if data == '':
+        if data == CLOSE:
             send(dest, CLOSE)
             info('%s hung up' % name)
             return
@@ -100,26 +101,35 @@ class SocksHandler(StreamRequestHandler):
             error('Mangled request. Reserved field (%r) is not null' % zero)
             self.close_request()
 
-        if address_type == 'IPV4':
+        if address_type == IPV4:
             raw_dest_address = self.read(4)
             dest_address = '.'.join(map(str, unpack('>4B', raw_dest_address)))
+        elif address_type == IPV6:
+            raw_dest_address = self.read(16)
+            dest_address = ":".join(map(lambda x: hex(x)[2:],unpack('>8H',raw_dest_address)))
         elif address_type == DOMAIN_NAME:
             dns_length = ord(self.read(1))
             dns_name = self.read(dns_length)
             dest_address = dns_name
         else:
-            error('Only supports IPV4 addressing not (%r)' % address_type)
+            error('Unknown addressing (%r)' % address_type)
             self.close_request()
 
         raw_dest_port = self.read(2)
         dest_port, = unpack('>H', raw_dest_port)
 
-        outbound_sock = socket.socket()
-        out_address = (dest_address, dest_port)
+        if address_type == IPV6:
+            outbound_sock = socket.socket(socket.AF_INET6)
+        else:
+            outbound_sock = socket.socket(socket.AF_INET)
+        out_address = socket.getaddrinfo(dest_address,dest_port)[0][4]
         debug("Creating forwarder connection to %r", out_address)
         outbound_sock.connect(out_address)
 
-        self.send_reply(outbound_sock.getsockname())
+        if address_type == IPV6:
+            self.send_reply6(outbound_sock.getsockname())
+        else:
+            self.send_reply(outbound_sock.getsockname())
     
         spawn_forwarder(outbound_sock, self.request, 'destination')
         forward(self.request, outbound_sock, 'client')
@@ -129,6 +139,13 @@ class SocksHandler(StreamRequestHandler):
         full_address = bind_tuple + (bind_port,)
         info('Setting up forwarding port %r' % (full_address,))
         msg = pack('>cccc4BH', VERSION, SUCCESS, '\x00', IPV4, *full_address)
+        self.wfile.write(msg)
+
+    def send_reply6(self, (bind_addr, bind_port, unused1, unused2)):
+        bind_tuple = tuple(map(lambda x: int(x,16), bind_addr.split(':')))
+        full_address = bind_tuple + (bind_port,)
+        info('Setting up forwarding port %r' % (full_address,))
+        msg = pack('>cccc8HH', VERSION, SUCCESS, '\x00', IPV6, *full_address)
         self.wfile.write(msg)
 
     def send_no_method(self):
